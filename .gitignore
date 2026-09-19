@@ -1,0 +1,23 @@
+# Virtual environment
+.venv/
+
+# VS Code settings
+.vscode/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# Editor
+.vscode/
+
+# Secrets
+.env
+
+# Generated audio from test scripts / pipeline runs
+*.wav
+
+# OS
+.DS_Store

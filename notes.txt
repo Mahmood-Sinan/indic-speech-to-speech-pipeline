@@ -1,0 +1,13 @@
+microphone: captures sound waves
+sound card: hardware/controller which handles sound waves and writes into audio devices
+audio devices: interfaces provided by sound card (basically addresses where sound card writes 
+            into, it can be multiple depending on audio input, also it can be used for output 
+            too where speakers read from there)
+ALSA: linux's low level audio interface which communicates directly with sound cards
+Pipewire/ Pulse Audio: Higher level audio interface(communicates with ALSA)
+PortAudio: Higher level audio interface than Pipewire(deals OS specific things)
+Sounddevice: Surface level interface which let's us access sound devices(communicates with PortAudio)
+Channel: The flow of audio. The flow can be one line or two line(mono or stereo). All this processings are done on channels
+
+The flow is
+microphone->soundcard-> audiodevices-> ALSA-> Pipewire-> PortAudio -> Sounddevice -> Application

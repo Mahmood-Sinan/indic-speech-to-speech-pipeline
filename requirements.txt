@@ -1,0 +1,29 @@
+# Indic Voice Agent - Python dependencies
+# Tested with Python 3.12 on Linux + CUDA 13.0 (RTX 4050, 6GB VRAM).
+#
+# PyTorch wheels are CUDA-version specific. If this file does not pull a
+# GPU-enabled build for your system, install torch manually first by
+# following https://pytorch.org/get-started/locally/, then re-run:
+#   pip install -r requirements.txt
+
+numpy==2.5.3
+torch==2.14.0
+
+# STT / TTS model loading (transformers) + STT's onnx-based remote code
+transformers==4.46.1
+huggingface_hub==0.36.2
+onnxruntime-gpu==1.30.0
+sentencepiece==0.2.2
+
+# Voice activity detection
+silero-vad==6.2.1
+
+# Audio capture / playback / file I/O
+sounddevice==0.5.6
+soundfile==0.14.0
+
+# LLM (Gemini)
+google-genai==2.24.0
+
+# TTS model (not on PyPI, installed from source)
+parler_tts @ git+https://github.com/huggingface/parler-tts.git@d108732cd57788ec86bc857d99a6cabd66663d68

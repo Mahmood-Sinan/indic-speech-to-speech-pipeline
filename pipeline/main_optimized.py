@@ -117,8 +117,7 @@ TTS_MODEL_ID = "ai4bharat/indic-parler-tts-pretrained"
 # Voice description.
 # controls the characteristics of the generated voice.
 TTS_DESCRIPTION = (
-    f"A female {LANGUAGE_NAMES[LANGUAGE]} speaker speaks clearly and naturally "
-    "with a friendly conversational tone at a moderate speed."
+    "A female speaker delivers a slightly expressive and animated speech with a moderate speed and pitch. The recording is of very high quality, with the speaker's voice sounding clear and very close up."
 )
 
 

@@ -9,6 +9,7 @@ from silero_vad import load_silero_vad
 from transformers import AutoModel, AutoTokenizer
 
 from google import genai
+from google.genai import types
 from parler_tts import ParlerTTSForConditionalGeneration
 
 
@@ -94,13 +95,25 @@ STT_MODEL_ID = "ai4bharat/indic-conformer-600m-multilingual"
 
 LLM_MODEL_ID = "gemini-3.5-flash-lite"
 
+SYSTEM_PROMPT = """
+You are a conversational voice assistant.
+
+Language rules:
+- Identify the language used by the user.
+- Respond entirely in the same language.
+- Use the native writing script of that language.
+- Do not respond in English unless the user speaks English.
+
+Keep your responses concise and natural for text-to-speech.
+Avoid markdown, bullet points, emojis, and special formatting.
+"""
+
 TTS_MODEL_ID = "ai4bharat/indic-parler-tts-pretrained"
 
 # Voice description.
 # controls the characteristics of the generated voice.
 TTS_DESCRIPTION = (
-    f"A female {LANGUAGE_NAMES[LANGUAGE]} speaker speaks clearly and naturally "
-    "with a friendly conversational tone at a moderate speed."
+    "A female speaker delivers a slightly expressive and animated speech with a moderate speed and pitch. The recording is of very high quality, with the speaker's voice sounding clear and very close up."
 )
 
 
@@ -163,18 +176,18 @@ print("STT model device:", stt_model.d)
 print("\nInitializing Gemini...")
 
 llm_client = genai.Client()
-
+chat = llm_client.chats.create(
+    model=LLM_MODEL_ID,
+    config=types.GenerateContentConfig(
+        system_instruction=SYSTEM_PROMPT
+    )
+)
 print("Gemini client initialized.")
 
-
 def ask_llm(text):
-    response = llm_client.interactions.create(
-        model=LLM_MODEL_ID,
-        input=text
-    )
+    response = chat.send_message(text)
     # asks the text prompt to gemini and return the reponse 
-    return response.output_text
-
+    return response.text
 
 # ************************************************************
 # Load TTS
@@ -212,7 +225,6 @@ def call_tts(text):
     # Returns: NumPy array containing the generated waveform.
     
     # Tokenize voice description
-    print("text: ", text)
     description_inputs = tts_description_tokenizer(
         TTS_DESCRIPTION,
         return_tensors="pt", # pt means pytorch tensors, the model expects so
@@ -343,7 +355,6 @@ stream = sd.InputStream(
     callback=audio_callback,
 )
 stream.start()
-
 
 # ************************************************************
 # State Initialization
@@ -511,6 +522,9 @@ try:
             utterance_chunks = []
             silence_count = 0
             speech_count = 0
+            print("Speak in:", LANGUAGE)
+            print("Press Ctrl+C to stop.")
+            print()
 
 
 except KeyboardInterrupt:

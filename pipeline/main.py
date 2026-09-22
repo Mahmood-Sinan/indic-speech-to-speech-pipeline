@@ -35,13 +35,57 @@ SILENCE_CHUNKS_REQUIRED = 10
 
 # Language you will speak
 #
+# as = Assamese
+# bn = Bengali
+# brx = Bodo
+# doi = Dogri
+# gu = Gujarati
 # hi = Hindi
+# kn = Kannada
+# kok = Konkani
+# ks = Kashmiri
+# mai = Maithili
+# ml = Malayalam
+# mni = Manipuri
+# mr = Marathi
+# ne = Nepali
+# or = Odia
+# pa = Punjabi
+# sa = Sanskrit
+# sat = Santali
+# sd = Sindhi
 # ta = Tamil
 # te = Telugu
-# kn = Kannada
-# ml = Malayalam
-# bn = Bengali
-LANGUAGE = "ml"
+# ur = Urdu
+LANGUAGE = "hi"
+
+LANGUAGE_NAMES = {
+    "as": "Assamese",
+    "bn": "Bengali",
+    "brx": "Bodo",
+    "doi": "Dogri",
+    "gu": "Gujarati",
+    "hi": "Hindi",
+    "kn": "Kannada",
+    "kok": "Konkani",
+    "ks": "Kashmiri",
+    "mai": "Maithili",
+    "ml": "Malayalam",
+    "mni": "Manipuri",
+    "mr": "Marathi",
+    "ne": "Nepali",
+    "or": "Odia",
+    "pa": "Punjabi",
+    "sa": "Sanskrit",
+    "sat": "Santali",
+    "sd": "Sindhi",
+    "ta": "Tamil",
+    "te": "Telugu",
+    "ur": "Urdu",
+}
+
+if LANGUAGE not in LANGUAGE_NAMES:
+    raise ValueError(f"Unsupported language code: {LANGUAGE}")
 
 # CTC for the first integrated test
 DECODING = "ctc"
@@ -55,23 +99,23 @@ TTS_MODEL_ID = "ai4bharat/indic-parler-tts-pretrained"
 # Voice description.
 # controls the characteristics of the generated voice.
 TTS_DESCRIPTION = (
-    "A female Malayalam speaker speaks clearly and naturally "
+    f"A female {LANGUAGE_NAMES[LANGUAGE]} speaker speaks clearly and naturally "
     "with a friendly conversational tone at a moderate speed."
 )
 
 
-# ============================================================
+# ************************************************************
 # Device configuration
-# ============================================================
+# ************************************************************
 
-STT_DEVICE = "cpu" 
+STT_DEVICE = "cpu"
 TTS_DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 VAD_DEVICE = "cpu"
 # Change to TTS_DEVICE = "cuda" if torch.cuda.is_available() else "cpu" if the GPU has enough VRAM
 
-print("=" * 60)
+print("*" * 60)
 print("Indic Voice Agent")
-print("=" * 60)
+print("*" * 60)
 
 print("PyTorch device:")
 print("  STT:", STT_DEVICE)
@@ -81,9 +125,9 @@ print("  VAD:", VAD_DEVICE)
 print()
 
 
-# ============================================================
+# ************************************************************
 # Load VAD
-# ============================================================
+# ************************************************************
 
 print("Loading Silero VAD...")
 
@@ -95,9 +139,9 @@ vad_model.eval() # puts VAD into evaluation mode (not training mode)
 print("Silero VAD loaded.")
 
 
-# ============================================================
+# ************************************************************
 # Load STT
-# ============================================================
+# ************************************************************
 
 print("\nLoading IndicConformer...")
 
@@ -112,9 +156,9 @@ print("IndicConformer loaded.")
 print("STT model device:", stt_model.d)
 
 
-# ============================================================
+# ************************************************************
 # Load Gemini
-# ============================================================
+# ************************************************************
 
 print("\nInitializing Gemini...")
 
@@ -132,9 +176,9 @@ def ask_llm(text):
     return response.output_text
 
 
-# ============================================================
+# ************************************************************
 # Load TTS
-# ============================================================
+# ************************************************************
 
 print("\nLoading Indic Parler-TTS...")
 
@@ -158,19 +202,16 @@ print("TTS device:", TTS_DEVICE)
 print("TTS sample rate:", TTS_SAMPLE_RATE) #1
 
 
-# ============================================================
+# ************************************************************
 # Call TTS
-# ============================================================
+# ************************************************************
 
 
 def call_tts(text):
     # Convert text into a waveform using TTS model.
-
     # Returns: NumPy array containing the generated waveform.
-
-    # --------------------------------------------------------
+    
     # Tokenize voice description
-    # --------------------------------------------------------
     print("text: ", text)
     description_inputs = tts_description_tokenizer(
         TTS_DESCRIPTION,
@@ -185,28 +226,19 @@ def call_tts(text):
     # The attention mask tells the transformer which positions contain real tokens 
     # and which positions are padding.
 
-    # --------------------------------------------------------
-    # Tokenize text to speak
-    # --------------------------------------------------------
-
+    # Tokenize text to be spoken
     prompt_inputs = tts_tokenizer(
         text,
         return_tensors="pt",
     )
-
     prompt_input_ids = prompt_inputs.input_ids.to(TTS_DEVICE)
-
     prompt_attention_mask = prompt_inputs.attention_mask.to(TTS_DEVICE)
 
-    # --------------------------------------------------------
-    # Generate speech
-    # --------------------------------------------------------
     # if TTS_DEVICE == "cuda":
     #     torch.cuda.synchronize()
 
     # start_time = time.perf_counter()
 
-    print("before")
     with torch.inference_mode(): # Interface mode doesn't do grad calc, backpropagation, etc...
         generation = tts_model.generate(
             input_ids=description_input_ids,
@@ -214,7 +246,6 @@ def call_tts(text):
             prompt_input_ids=prompt_input_ids,
             prompt_attention_mask=prompt_attention_mask,
         )
-    print("after")
     # output of model which is the waveform represented as a pytorch tensor
 
     # if TTS_DEVICE == "cuda":
@@ -224,18 +255,12 @@ def call_tts(text):
 
     audio = generation.cpu().numpy().squeeze()
     # .cpu() -> move the tensor to cpu, because after this we use np and sf which doesn't require gpu
-    # .numpy() -> because sf expects a np array
+    # .numpy() -> because sd expects a np array
     # .squeeze() -> if audio is [1,n] or [n,1] squeeze makes them [n] (removes dimension of size 1).
 
 
-    # --------------------------------------------------------
-    # Calculate audio duration / RTF
-    # --------------------------------------------------------
-
     # audio_duration = len(audio) / TTS_SAMPLE_RATE
-
     # rtf = generation_time / audio_duration if audio_duration > 0 else float("inf")
-
     # print(
     #     f"TTS generation: {generation_time:.2f}s | "
     #     f"audio: {audio_duration:.2f}s | "
@@ -245,10 +270,9 @@ def call_tts(text):
     return audio
 
 
-# ============================================================
+# ************************************************************
 # Audio playback
-# ============================================================
-
+# ************************************************************
 
 def play_audio(audio, tts_model_sampling_rate):
     # Play generated TTS output through the default playback device.
@@ -257,12 +281,11 @@ def play_audio(audio, tts_model_sampling_rate):
     sd.wait() # wait till audio gets over
 
 
-# ============================================================
+# ************************************************************
 # Audio queue
-# ============================================================
+# ************************************************************
 
 audio_queue = queue.Queue(maxsize=100)
-
 
 def audio_callback(
     indata,
@@ -270,68 +293,45 @@ def audio_callback(
     time_info,
     status,
 ):
-    """
-    Called by sounddevice whenever a new
-    microphone chunk arrives.
-    """
+    # Called by sounddevice whenever a new microphone chunk arrives.
 
     if status:
         print("Audio status:", status)
-
     try:
-
         audio_queue.put_nowait(indata.copy())
-
     except queue.Full:
+        pass
 
-        print("WARNING: Audio queue is full. " "Dropping audio chunk.")
-
-
-# ============================================================
+# ************************************************************
 # Clear queued microphone audio
-# ============================================================
-
+# ************************************************************
 
 def clear_audio_queue():
-    """
-    Remove microphone audio that accumulated while
-    the assistant was processing / speaking.
+    # Remove microphone audio that accumulated while
+    # the assistant was processing / speaking.
 
-    This prevents old audio from being interpreted as
-    a new user utterance after TTS finishes.
-    """
+    # This prevents old audio from being interpreted as
+    # a new user utterance after TTS finishes.
 
     cleared = 0
-
     while True:
-
         try:
-
             audio_queue.get_nowait()
-
             cleared += 1
-
         except queue.Empty:
-
             break
-
     if cleared > 0:
-
         print(f"Cleared {cleared} queued " f"microphone chunks.")
 
 
-# ============================================================
+# ************************************************************
 # Start microphone
-# ============================================================
+# ************************************************************
 
 print("\nStarting microphone...")
-
 print("Speak in:", LANGUAGE)
-
 print("Press Ctrl+C to stop.")
-
 print()
-
 
 # Tells sounddevice to open the microphone and continuously provide audio to audio_callback()
 stream = sd.InputStream(
@@ -345,9 +345,9 @@ stream = sd.InputStream(
 stream.start()
 
 
-# ============================================================
-# State
-# ============================================================
+# ************************************************************
+# State Initialization
+# ************************************************************
 
 speech_active = False
 
@@ -356,19 +356,14 @@ silence_count = 0
 
 utterance_chunks = []
 
-
-# ============================================================
+# ************************************************************
 # Main loop
-# ============================================================
+# ************************************************************
 
 try:
-
     while True:
 
-        # ----------------------------------------------------
         # Get next microphone chunk
-        # ----------------------------------------------------
-
         chunk = audio_queue.get()
 
         # chunk shape:
@@ -378,48 +373,31 @@ try:
         # 512 samples
         # 2 channels
 
-        # ----------------------------------------------------
         # Stereo -> mono
-        # ----------------------------------------------------
-
         mono = chunk.mean(axis=1)
 
-        # ----------------------------------------------------
         # NumPy -> PyTorch
-        # ----------------------------------------------------
-
         vad_audio = torch.from_numpy(mono).float().to(VAD_DEVICE)
 
-        # ----------------------------------------------------
         # Run VAD
-        # ----------------------------------------------------
-
         with torch.inference_mode():
-
             speech_probability = vad_model(vad_audio, SAMPLE_RATE).item()
 
         is_speech = speech_probability >= VAD_THRESHOLD
 
-        # ----------------------------------------------------
         # Update VAD counters
-        # ----------------------------------------------------
-
         if is_speech:
-
             speech_count += 1
             silence_count = 0
-
         else:
-
             silence_count += 1
             speech_count = 0
 
-        # ====================================================
+        # ****************************************************
         # Detect SPEECH START
-        # ====================================================
+        # ****************************************************
 
         if not speech_active:
-
             if speech_count >= SPEECH_CHUNKS_REQUIRED:
 
                 speech_active = True
@@ -428,59 +406,45 @@ try:
                 utterance_chunks = [chunk]
 
                 silence_count = 0
-
             continue
 
-        # ====================================================
+        # ****************************************************
         # Currently inside an utterance
-        # ====================================================
+        # ****************************************************
 
         utterance_chunks.append(chunk)
 
-        # ====================================================
+        # ****************************************************
         # Detect SPEECH END
-        # ====================================================
+        # ****************************************************
 
         if silence_count >= SILENCE_CHUNKS_REQUIRED:
 
             speech_active = False
 
-            # ------------------------------------------------
             # Combine chunks
-            # ------------------------------------------------
-
             utterance = np.concatenate(
                 utterance_chunks,
                 axis=0,
             )
-
-            # ------------------------------------------------
             # Stereo -> mono
-            # ------------------------------------------------
-
             utterance = utterance.mean(axis=1)
-
             duration = len(utterance) / SAMPLE_RATE
-
             print()
             print(f"Utterance detected " f"({duration:.2f}s)")
 
-            # ------------------------------------------------
             # Convert to PyTorch
-            # ------------------------------------------------
-
             wav = torch.from_numpy(utterance).unsqueeze(0).to(stt_model.d)
 
-            # =================================================
+            # *************************************************
             # STT
-            # =================================================
+            # *************************************************
 
             print("Transcribing...")
 
             stt_start = time.perf_counter()
 
             with torch.inference_mode():
-
                 transcription = stt_model(
                     wav,
                     LANGUAGE,
@@ -488,85 +452,64 @@ try:
                 )
 
             if STT_DEVICE == "cuda":
-
                 torch.cuda.synchronize()
 
             stt_time = time.perf_counter() - stt_start
 
             print(f"You: {transcription}")
-
             print(f"STT time: " f"{stt_time:.2f}s")
 
-            # =================================================
+            # *************************************************
             # LLM
-            # =================================================
+            # *************************************************
 
             print("Thinking...")
-
             llm_start = time.perf_counter()
-
             llm_response = ask_llm(transcription)
-
             llm_time = time.perf_counter() - llm_start
 
             print(f"Gemini: {llm_response}")
-
             print(f"LLM time: " f"{llm_time:.2f}s")
 
-            # =================================================
+            # *************************************************
             # TTS
-            # =================================================
+            # *************************************************
 
             print("Generating speech...")
-
             tts_audio = call_tts(llm_response)
             tts_model_sampling_rate = tts_model.config.sampling_rate
-            # =================================================
+
+            # *************************************************
             # Playback
-            # =================================================
+            # *************************************************
 
             print("Playing response...")
-
             playback_start = time.perf_counter()
-
             play_audio(tts_audio, tts_model_sampling_rate)
-
             playback_time = time.perf_counter() - playback_start
 
-            # =================================================
+            # *************************************************
             # Total processing information
-            # =================================================
+            # *************************************************
 
             print()
-            print("========== TIMING ==========")
-
+            print("********** TIMING **********")
             print(f"STT:       {stt_time:.2f}s")
-
             print(f"Gemini:    {llm_time:.2f}s")
-
             print(f"TTS + gen: see above")
-
             print(f"Playback:  {playback_time:.2f}s")
-
-            print("============================")
-
+            print("****************************")
             print()
 
-            # ------------------------------------------------
             # Clear microphone audio captured while
             # processing / speaking
-            # ------------------------------------------------
 
             clear_audio_queue()
 
-            # ------------------------------------------------
             # Reset utterance state
-            # ------------------------------------------------
 
             utterance_chunks = []
-
             silence_count = 0
-
             speech_count = 0
 
 

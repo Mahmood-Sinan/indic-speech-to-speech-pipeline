@@ -25,5 +25,16 @@ soundfile==0.14.0
 # LLM (Gemini)
 google-genai==2.24.0
 
+# Local NMT translation stage: Bhashini/AI4Bharat IndicTrans2, ported from
+# Suno Sutra's bhashini_models NMT server (nmt/bhashini_engine/, vendored)
+# as int8-quantized CTranslate2 checkpoints. ctranslate2 runs the model
+# itself; the rest are the preprocessing/postprocessing stack the engine
+# uses for script normalisation, tokenisation and sentence splitting.
+ctranslate2
+indic-nlp-library-itt
+sacremoses
+mosestokenizer
+nltk
+
 # TTS model (not on PyPI, installed from source)
 parler_tts @ git+https://github.com/huggingface/parler-tts.git@d108732cd57788ec86bc857d99a6cabd66663d68

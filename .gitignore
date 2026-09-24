@@ -19,5 +19,15 @@ __pycache__/
 # Generated audio from test scripts / pipeline runs
 *.wav
 
+# Local NMT model checkpoints (~430MB, ported from suno-sutra-sw's
+# bhashini_models.zip via git-lfs -- see nmt/nmt_client.py docstring for
+# how to regenerate).
+nmt/checkpoints/
+
+# suno-sutra-sw is a separate git repo cloned alongside this one for
+# reference; it has its own history and shouldn't be tracked as part of
+# this repo's tree.
+suno-sutra-sw/
+
 # OS
 .DS_Store

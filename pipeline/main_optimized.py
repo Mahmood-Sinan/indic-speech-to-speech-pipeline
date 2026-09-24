@@ -3,7 +3,9 @@ import os
 os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
 import queue
+import sys
 import time
+from pathlib import Path
 
 import numpy as np
 import sounddevice as sd
@@ -15,6 +17,13 @@ from transformers import AutoModel, AutoTokenizer
 from google import genai
 from google.genai import types
 from parler_tts import ParlerTTSForConditionalGeneration
+
+# The local NMT translation stage lives in nmt/, a sibling of pipeline/.
+# Running `python pipeline/main_optimized.py` only puts pipeline/ itself on
+# sys.path, so add the repo root before importing it.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from nmt.nmt_client import IndicTransTranslator, NMTError
 
 
 SAMPLE_RATE = 16000
@@ -92,6 +101,20 @@ LANGUAGE_NAMES = {
 if LANGUAGE not in LANGUAGE_NAMES:
     raise ValueError(f"Unsupported language code: {LANGUAGE}")
 
+# Language the LLM works in.
+#
+# The local NMT stage (IndicTrans2, nmt/) translates in both directions
+# around the LLM:
+#
+#   STT -> translate(LANGUAGE -> LLM_LANGUAGE) -> LLM
+#   LLM -> translate(LLM_LANGUAGE -> LANGUAGE) -> TTS
+#
+# Keeping one fixed middle language means the LLM prompt is stable, its
+# reasoning quality doesn't depend on the user's language, and TTS always
+# gets text back in the language the user speaks.
+LLM_LANGUAGE = "en"
+LLM_LANGUAGE_NAME = "English"
+
 # CTC for the first integrated test
 DECODING = "ctc"
 
@@ -103,10 +126,11 @@ SYSTEM_PROMPT = """
 You are a conversational voice assistant.
 
 Language rules:
-- Identify the language used by the user.
-- Respond entirely in the same language.
-- Use the native writing script of that language.
-- Do not respond in English unless the user speaks English.
+- The text you receive has been translated into English for you. If it
+  somehow arrives in another language, still understand it and carry on.
+- Always respond entirely in English, in the Latin script.
+- Never switch to another language, even if the user asks; a translation
+  stage will render your reply in the user's language afterwards.
 
 Keep your responses concise and natural for text-to-speech.
 Avoid markdown, bullet points, emojis, and special formatting.
@@ -206,6 +230,62 @@ def ask_llm(text):
     response = chat.send_message(text)
     # asks the text prompt to gemini and return the reponse 
     return response.text
+
+# ************************************************************
+# Load local NMT translator
+# ************************************************************
+
+print("\nLoading local NMT models...")
+
+translator = None
+
+try:
+    # Both directions are loaded up front (the models are ~212M params each,
+    # a few seconds from the local HF cache) so the first utterance doesn't
+    # pay for a cold start.
+    translator = IndicTransTranslator.from_env()
+except NMTError as exc:
+    # Fail soft: without the NMT stage the agent still runs, it just talks
+    # to the LLM in whatever language was transcribed.
+    print(f"WARNING: translation disabled ({exc}).")
+    print("Check network/HF cache and re-run to enable local translation.")
+
+if translator is not None:
+    for _src, _tgt in ((LANGUAGE, LLM_LANGUAGE), (LLM_LANGUAGE, LANGUAGE)):
+        if _src == _tgt:
+            continue
+        try:
+            translator.warm_up(_src, _tgt)
+        except NMTError as exc:
+            # Not fatal: the real call will warn again if it keeps failing.
+            print(f"WARNING: warm-up {_src}->{_tgt} failed: {exc}")
+
+    print("Local NMT translator initialized.")
+    print(f"Translation: {LANGUAGE_NAMES[LANGUAGE]} <-> {LLM_LANGUAGE_NAME}")
+
+print()
+
+
+def translate_text(text, source_language, target_language):
+    # Local IndicTrans2 text-to-text conversion stage (runs on CPU, no
+    # network or credentials involved at inference time).
+    #
+    # Returns (translated_text, seconds_spent).
+
+    # Nothing to translate: same language on both ends, or NMT unavailable.
+    if source_language == target_language or translator is None:
+        return text, 0.0
+
+    start = time.perf_counter()
+    try:
+        translated = translator.translate(text, source_language, target_language)
+    except NMTError as exc:
+        elapsed = time.perf_counter() - start
+        print(f"NMT {source_language}->{target_language} failed: {exc}")
+        print("Skipping translation for this turn; passing text through unchanged.")
+        return text, elapsed
+
+    return translated, time.perf_counter() - start
 
 # ************************************************************
 # Load TTS
@@ -509,23 +589,49 @@ try:
             print(f"STT time: " f"{stt_time:.2f}s")
 
             # *************************************************
+            # Translation in: user language -> LLM language
+            # *************************************************
+
+            print("Translating for the LLM...")
+
+            llm_input, translate_in_time = translate_text(
+                transcription, LANGUAGE, LLM_LANGUAGE
+            )
+
+            if llm_input != transcription:
+                print(f"Translated ({LANGUAGE}->{LLM_LANGUAGE}): {llm_input}")
+
+            # *************************************************
             # LLM
             # *************************************************
 
             print("Thinking...")
             llm_start = time.perf_counter()
-            llm_response = ask_llm(transcription)
+            llm_response = ask_llm(llm_input)
             llm_time = time.perf_counter() - llm_start
 
             print(f"Gemini: {llm_response}")
             print(f"LLM time: " f"{llm_time:.2f}s")
 
             # *************************************************
+            # Translation out: LLM language -> user language
+            # *************************************************
+
+            print("Translating reply for TTS...")
+
+            spoken_response, translate_out_time = translate_text(
+                llm_response, LLM_LANGUAGE, LANGUAGE
+            )
+
+            if spoken_response != llm_response:
+                print(f"Translated ({LLM_LANGUAGE}->{LANGUAGE}): {spoken_response}")
+
+            # *************************************************
             # TTS
             # *************************************************
 
             print("Generating speech...")
-            tts_audio = call_tts(llm_response)
+            tts_audio = call_tts(spoken_response)
             tts_model_sampling_rate = tts_model.config.sampling_rate
 
             # *************************************************
@@ -544,7 +650,9 @@ try:
             print()
             print("********** TIMING **********")
             print(f"STT:       {stt_time:.2f}s")
+            print(f"Trans in:  {translate_in_time:.2f}s")
             print(f"Gemini:    {llm_time:.2f}s")
+            print(f"Trans out: {translate_out_time:.2f}s")
             print(f"TTS + gen: see above")
             print(f"Playback:  {playback_time:.2f}s")
             print("****************************")

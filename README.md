@@ -6,9 +6,19 @@ sends it to Gemini, and speaks the reply back — all in a continuous loop.
 
 ```
 mic -> Silero VAD (detect speech) -> IndicConformer (speech-to-text)
+    -> local NMT (translate to English)
     -> Gemini (LLM)
+    -> local NMT (translate back to your language)
     -> Indic Parler-TTS (text-to-speech) -> speaker
 ```
+
+The LLM always works in English. A local NMT stage converts text in both
+directions around it, so you can speak in your own language and hear the
+reply in the same language. It's AI4Bharat's IndicTrans2, ported from
+Suno Sutra's `bhashini_models` NMT server as int8-quantized CTranslate2
+checkpoints (the same models Bhashini/Suno Sutra run on-device) — see
+[`nmt/`](#nmt--local-text-to-text-translation) below. There are no
+translation credentials and no network calls at inference time.
 
 ## Requirements
 
@@ -32,6 +42,39 @@ Set your Gemini API key (either name works):
 export GOOGLE_API_KEY="your-api-key"
 ```
 
+No credentials are needed for translation, and there's no HuggingFace
+download either — the two ~214MB IndicTrans2 checkpoints (int8
+CTranslate2 format) are local files under `nmt/checkpoints/`, which are
+**not committed to git**. Fetch them from the `suno-sutra-sw` clone (this
+requires [git-lfs](https://git-lfs.com/) and pulls ~1.6GB, since the
+model files sit inside `bhashini_models.zip` alongside ASR/TTS assets we
+don't need):
+
+```bash
+cd suno-sutra-sw
+git lfs install --local   # one-time, local to this clone
+git lfs pull --include="rootfs/roles/indic/files/bhashini_models.zip"
+cd ..
+
+mkdir -p nmt/checkpoints
+cd /tmp && unzip -o "$OLDPWD/suno-sutra-sw/rootfs/roles/indic/files/bhashini_models.zip" \
+  "bhashini_models/nmt/checkpoints/indic-en/ct2_int8_model/*" \
+  "bhashini_models/nmt/checkpoints/en-indic/ct2_int8_model/*"
+mv bhashini_models/nmt/checkpoints/indic-en "$OLDPWD/nmt/checkpoints/"
+mv bhashini_models/nmt/checkpoints/en-indic "$OLDPWD/nmt/checkpoints/"
+cd "$OLDPWD"
+```
+
+You can point at different checkpoint directories, or run NMT on the GPU
+instead of CPU:
+
+```bash
+export NMT_INDIC_EN_CHECKPOINT="/path/to/indic-en/ct2_int8_model"
+export NMT_EN_INDIC_CHECKPOINT="/path/to/en-indic/ct2_int8_model"
+# optional: run NMT on the GPU instead of CPU
+# export NMT_DEVICE="cuda"
+```
+
 Find your microphone's device index:
 
 ```bash
@@ -51,8 +94,8 @@ python pipeline/main_optimized.py
 ```
 
 Speak into the microphone; the agent detects the start/end of your
-utterance via VAD, transcribes it, gets a reply from Gemini, and speaks it
-back. Press `Ctrl+C` to stop.
+utterance via VAD, transcribes it, translates it to English for Gemini,
+translates the reply back, and speaks it. Press `Ctrl+C` to stop.
 
 ## Project layout
 
@@ -60,6 +103,7 @@ back. Press `Ctrl+C` to stop.
 pipeline/   the assembled end-to-end voice agent
 vad/        voice activity detection experiments
 stt/        speech-to-text experiments
+nmt/        local text-to-text translation (Bhashini/IndicTrans2) client + test
 tts/        text-to-speech experiments
 llm/        LLM (Gemini) experiments
 ```
@@ -72,10 +116,11 @@ speech?") without running the whole agent.
 ### `pipeline/`
 
 - **`main_optimized.py`** — the current, working entry point. Loads VAD
-  (CPU), IndicConformer STT (CPU), Gemini (API), and Indic Parler-TTS (GPU
-  if available) once at startup, then runs a loop: read mic chunks -> VAD
-  decides when an utterance starts/ends -> transcribe -> ask Gemini ->
-  synthesize speech -> play it back.
+  (CPU), IndicConformer STT (CPU), the local NMT translator (CPU), Gemini
+  (API), and Indic Parler-TTS (GPU if available) once at startup, then
+  runs a loop: read mic chunks -> VAD decides when an utterance
+  starts/ends -> transcribe -> translate to English -> ask Gemini ->
+  translate back to your language -> synthesize speech -> play it back.
 - **`main.py`** — an earlier snapshot of the same pipeline, kept for
   reference. `main_optimized.py` is the maintained version (fixed GPU OOM
   from IndicConformer defaulting to CUDA, and TTS audio dtype).
@@ -99,6 +144,34 @@ speech?") without running the whole agent.
   transcribes it with IndicConformer (CTC decoding).
 - **`test_stt_model_load.py`** — minimal smoke test that just loads the
   IndicConformer model and prints which device it landed on.
+
+### `nmt/` — local text-to-text translation
+
+- **`nmt_client.py`** — the `IndicTransTranslator` class wrapping two
+  local CTranslate2 models (one per direction, `*->eng_Latn` and
+  `eng_Latn->*`). Runs on CPU by default. Handles the pipeline's short
+  language codes (`hi`, `ta`, ...) -> IndicTrans2's script-qualified
+  codes (`hin_Deva`, `tam_Taml`, ...) and delegates sentence splitting,
+  tokenisation and translation to `bhashini_engine/`. Failures raise
+  `NMTError`, which the pipeline catches to keep the turn running with
+  untranslated text.
+- **`bhashini_engine/`** — AI4Bharat's IndicTrans2 CTranslate2 inference
+  engine, vendored from Suno Sutra's `bhashini_models` NMT server (see
+  the module docstring in `bhashini_engine/engine.py` for exact
+  provenance and what was changed). Handles script normalisation,
+  sentencepiece tokenisation, sentence splitting/batching, and
+  detokenisation/transliteration back to the target script.
+- **`checkpoints/`** — the two int8 CTranslate2 model directories
+  (`indic-en/`, `en-indic/`), ~214MB each. **Not committed to git** — see
+  Setup above for how to fetch them.
+- **`nmt_test.py`** — loads the translator, then does a Hindi ->
+  English -> Hindi translation with timings, and exercises the fail-soft
+  paths (same language, empty input, unsupported language). Run it to see
+  translation quality before running the whole agent:
+
+  ```bash
+  python nmt/nmt_test.py
+  ```
 
 ### `tts/` — text-to-speech
 
@@ -124,3 +197,16 @@ speech?") without running the whole agent.
 - **Mic device index (`DEVICE` in the scripts) is machine-specific** — it
   will not be the same on your machine. Always check with
   `sd.query_devices()` first.
+- **Local NMT translation is best-effort.** If the checkpoints are
+  missing or fail to load (see Setup above), a startup warning disables
+  translation and the agent still runs, just talking to the LLM in
+  whatever language was transcribed. Any per-turn failure prints a
+  warning and passes the text through untranslated so the turn still
+  completes. Each turn costs two CPU inference passes; both show up as
+  `Trans in:` / `Trans out:` in the timing summary. Typical latency with
+  the int8 CTranslate2 checkpoints is well under 0.1s per direction for a
+  few sentences on CPU.
+- **The LLM always speaks English now.** `LLM_LANGUAGE` in
+  `pipeline/main_optimized.py` is the middle language between the two
+  local NMT stages, and `SYSTEM_PROMPT` tells Gemini to stay in English —
+  the reply is translated back before TTS.

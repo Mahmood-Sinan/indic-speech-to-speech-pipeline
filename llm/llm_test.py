@@ -1,13 +1,13 @@
-from google import genai
+"""Check Groq credentials without loading the speech models."""
 
-client = genai.Client()
-# creates a client to communicate with google's gemini API.
-# this client automatically takes in API credentials from environment. 
-# Or can be passed manually as:
-# client = genai.Client(api_key="API_KEY")
+import sys
+from pathlib import Path
 
-interaction = client.interactions.create(
-    model="gemini-3.5-flash-lite",
-    input="Explain me how AI works in detail."
-)
-print(interaction.output_text)
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from llm.llm_client import GroqChat
+
+
+if __name__ == "__main__":
+    chat = GroqChat("You are a helpful assistant. Keep your answers concise.")
+    print(chat.send_message("Explain how AI works in two sentences."))

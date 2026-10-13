@@ -22,8 +22,9 @@ silero-vad==6.2.1
 sounddevice==0.5.6
 soundfile==0.14.0
 
-# LLM (Gemini)
-google-genai==2.24.0
+# LLM (Groq's OpenAI-compatible API) and local credentials
+openai==3.16.2
+python-dotenv==1.2.1
 
 # Local NMT translation stage: Bhashini/AI4Bharat IndicTrans2, ported from
 # Suno Sutra's bhashini_models NMT server (nmt/bhashini_engine/, vendored)

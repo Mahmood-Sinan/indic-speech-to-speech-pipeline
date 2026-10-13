@@ -2,12 +2,12 @@
 
 A real-time, spoken-language voice assistant for Indian languages. It listens
 on the microphone, detects when you're speaking, transcribes your speech,
-sends it to Gemini, and speaks the reply back — all in a continuous loop.
+sends it to Groq, and speaks the reply back — all in a continuous loop.
 
 ```
 mic -> Silero VAD (detect speech) -> IndicConformer (speech-to-text)
     -> local NMT (translate to English)
-    -> Gemini (LLM)
+    -> Groq (LLM)
     -> local NMT (translate back to your language)
     -> Indic Parler-TTS (text-to-speech) -> speaker
 ```
@@ -24,7 +24,7 @@ translation credentials and no network calls at inference time.
 
 - Linux with a working microphone and speakers (ALSA/PulseAudio/PipeWire)
 - Python 3.12
-- A Gemini API key ([get one here](https://aistudio.google.com/apikey))
+- A Groq API key ([get one here](https://console.groq.com/keys))
 - Optional: an NVIDIA GPU with CUDA for faster TTS (the pipeline runs on
   CPU-only machines too, just slower)
 
@@ -36,10 +36,21 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Set your Gemini API key (either name works):
+Set your Groq API key in the environment:
 
 ```bash
-export GOOGLE_API_KEY="your-api-key"
+export GROQ_API_KEY="your-api-key"
+```
+
+Alternatively, add `GROQ_API_KEY="your-api-key"` to the project's `.env`
+file. Both pipeline entry points and the LLM check load this file automatically;
+an existing environment variable takes precedence. `.env` is ignored by git.
+The default Groq model is `openai/gpt-oss-20b`.
+
+Verify the LLM connection without loading any speech models:
+
+```bash
+python llm/llm_test.py
 ```
 
 No credentials are needed for translation, and there's no HuggingFace
@@ -94,7 +105,7 @@ python pipeline/main_optimized.py
 ```
 
 Speak into the microphone; the agent detects the start/end of your
-utterance via VAD, transcribes it, translates it to English for Gemini,
+utterance via VAD, transcribes it, translates it to English for Groq,
 translates the reply back, and speaks it. Press `Ctrl+C` to stop.
 
 ## Project layout
@@ -105,7 +116,7 @@ vad/        voice activity detection experiments
 stt/        speech-to-text experiments
 nmt/        local text-to-text translation (Bhashini/IndicTrans2) client + test
 tts/        text-to-speech experiments
-llm/        LLM (Gemini) experiments
+llm/        LLM (Groq) experiments
 ```
 
 Each non-`pipeline` folder holds small standalone scripts used to test one
@@ -116,10 +127,10 @@ speech?") without running the whole agent.
 ### `pipeline/`
 
 - **`main_optimized.py`** — the current, working entry point. Loads VAD
-  (CPU), IndicConformer STT (CPU), the local NMT translator (CPU), Gemini
+  (CPU), IndicConformer STT (CPU), the local NMT translator (CPU), Groq
   (API), and Indic Parler-TTS (GPU if available) once at startup, then
   runs a loop: read mic chunks -> VAD decides when an utterance
-  starts/ends -> transcribe -> translate to English -> ask Gemini ->
+  starts/ends -> transcribe -> translate to English -> ask Groq ->
   translate back to your language -> synthesize speech -> play it back.
 - **`main.py`** — an earlier snapshot of the same pipeline, kept for
   reference. `main_optimized.py` is the maintained version (fixed GPU OOM
@@ -180,7 +191,7 @@ speech?") without running the whole agent.
 
 ### `llm/`
 
-- **`llm_test.py`** — sends a single fixed prompt to Gemini and prints the
+- **`llm_test.py`** — sends a single fixed prompt to Groq and prints the
   response, to verify the API key and client are working.
 
 ## Notes / gotchas
@@ -208,5 +219,5 @@ speech?") without running the whole agent.
   few sentences on CPU.
 - **The LLM always speaks English now.** `LLM_LANGUAGE` in
   `pipeline/main_optimized.py` is the middle language between the two
-  local NMT stages, and `SYSTEM_PROMPT` tells Gemini to stay in English —
+  local NMT stages, and `SYSTEM_PROMPT` tells Groq to stay in English —
   the reply is translated back before TTS.

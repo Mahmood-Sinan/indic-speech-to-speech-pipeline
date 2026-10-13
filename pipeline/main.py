@@ -1,5 +1,7 @@
 import queue
+import sys
 import time
+from pathlib import Path
 
 import numpy as np
 import sounddevice as sd
@@ -8,9 +10,12 @@ import torch
 from silero_vad import load_silero_vad
 from transformers import AutoModel, AutoTokenizer
 
-from google import genai
-from google.genai import types
 from parler_tts import ParlerTTSForConditionalGeneration
+
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from llm.llm_client import DEFAULT_MODEL, GroqChat
 
 
 SAMPLE_RATE = 16000
@@ -58,7 +63,7 @@ SILENCE_CHUNKS_REQUIRED = 10
 # ta = Tamil
 # te = Telugu
 # ur = Urdu
-LANGUAGE = "hi"
+LANGUAGE = "ml"
 
 LANGUAGE_NAMES = {
     "as": "Assamese",
@@ -93,7 +98,7 @@ DECODING = "ctc"
 
 STT_MODEL_ID = "ai4bharat/indic-conformer-600m-multilingual"
 
-LLM_MODEL_ID = "gemini-3.5-flash-lite"
+LLM_MODEL_ID = DEFAULT_MODEL
 
 SYSTEM_PROMPT = """
 You are a conversational voice assistant.
@@ -170,24 +175,17 @@ print("STT model device:", stt_model.d)
 
 
 # ************************************************************
-# Load Gemini
+# Load Groq
 # ************************************************************
 
-print("\nInitializing Gemini...")
+print("\nInitializing Groq...")
 
-llm_client = genai.Client()
-chat = llm_client.chats.create(
-    model=LLM_MODEL_ID,
-    config=types.GenerateContentConfig(
-        system_instruction=SYSTEM_PROMPT
-    )
-)
-print("Gemini client initialized.")
+chat = GroqChat(SYSTEM_PROMPT, model=LLM_MODEL_ID)
+print("Groq client initialized.")
+
 
 def ask_llm(text):
-    response = chat.send_message(text)
-    # asks the text prompt to gemini and return the reponse 
-    return response.text
+    return chat.send_message(text)
 
 # ************************************************************
 # Load TTS
@@ -479,7 +477,7 @@ try:
             llm_response = ask_llm(transcription)
             llm_time = time.perf_counter() - llm_start
 
-            print(f"Gemini: {llm_response}")
+            print(f"Groq: {llm_response}")
             print(f"LLM time: " f"{llm_time:.2f}s")
 
             # *************************************************
@@ -506,7 +504,7 @@ try:
             print()
             print("********** TIMING **********")
             print(f"STT:       {stt_time:.2f}s")
-            print(f"Gemini:    {llm_time:.2f}s")
+            print(f"Groq:      {llm_time:.2f}s")
             print(f"TTS + gen: see above")
             print(f"Playback:  {playback_time:.2f}s")
             print("****************************")
